@@ -75,16 +75,12 @@ export default class Admin extends React.Component<Props, State> {
     if (event.ctrlKey && event.key === 'h') {
       event.preventDefault(); // Prevent browser's default action
       
-      // Focus on the country search dropdown
-      if (this.countrySearchRef.current) {
-        // Access the underlying DOM input element and focus on it
-        const dropdownElement = this.countrySearchRef.current as any;
-        const searchInput = dropdownElement.searchRef?.current?.inputRef?.current;
-        
-        if (searchInput) {
-          searchInput.focus();
-          searchInput.select(); // Optional: select any existing text
-        }
+      // Find the search input by its class and focus on it
+      const searchInput = document.querySelector('.adder__dropdown--select-member input.search');
+      
+      if (searchInput) {
+        (searchInput as HTMLElement).focus();
+        (searchInput as HTMLInputElement).select(); // Optional: select any existing text
       }
     }
   }
