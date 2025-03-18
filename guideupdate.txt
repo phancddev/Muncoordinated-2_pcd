@@ -1,0 +1,7 @@
+Các tính năng được thêm và hướng dẫn sử dụng muncoordinated [Ver ACHMUN 2025]:
+1. Ở phần setup, sử dụng phím tắt Control + H để bật nhanh ô tìm kiếm các nước.
+
+2. Thêm nút present all, voting all. Ngoài ra khi present tắt thì voting cũng bị khoá không được thao tác.
+
+3. Thêm nút Ẩn/ Hiện Stats bên phải, có thể sử dụng phím tắt Control + Shift + E để thao tác bật tắt nhanh.
+

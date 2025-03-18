@@ -34,6 +34,7 @@ interface State {
   rank: Rank;
   voting: MemberData['voting'];
   present: MemberData['present'];
+  showStats: boolean; // New state property to control stats table visibility
 }
 
 const RANK_OPTIONS = [
@@ -55,7 +56,8 @@ export default class Admin extends React.Component<Props, State> {
       options: [],
       rank: Rank.Standard,
       voting: false,
-      present: true
+      present: true,
+      showStats: true // Default to showing stats
     };
   }
 
@@ -69,7 +71,7 @@ export default class Admin extends React.Component<Props, State> {
     document.removeEventListener('keydown', this.handleKeyDown);
   }
 
-  // Handle keyboard shortcut
+  // Handle keyboard shortcuts
   handleKeyDown = (event: KeyboardEvent) => {
     // Check if Ctrl+H is pressed
     if (event.ctrlKey && event.key === 'h') {
@@ -83,9 +85,87 @@ export default class Admin extends React.Component<Props, State> {
         (searchInput as HTMLInputElement).select(); // Optional: select any existing text
       }
     }
+    
+    // Check if Ctrl+Shift+E is pressed to toggle stats visibility
+    if (event.ctrlKey && event.shiftKey && event.key === 'E') {
+      event.preventDefault(); // Prevent browser's default action
+      this.toggleStatsVisibility(); // Toggle stats visibility
+    }
+  }
+
+  // Toggle stats table visibility
+  toggleStatsVisibility = () => {
+    this.setState(prevState => ({
+      showStats: !prevState.showStats
+    }));
+  }
+
+  // Toggle all members' present status
+  toggleAllPresent = () => {
+    const { committee } = this.props;
+    const members = committee.members || {};
+    
+    // Determine the new value (toggle the current state)
+    const areAllPresent = Object.values(members).length > 0 && 
+      Object.values(members).every(member => member.present);
+    const newValue = !areAllPresent;
+    
+    // Update all members
+    Object.keys(members).forEach(id => {
+      const memberRef = firebase.database()
+        .ref(`committees/${this.props.match.params.committeeID}/members/${id}`);
+      
+      memberRef.update({ present: newValue });
+      
+      // If setting present to false, also set voting to false
+      if (!newValue) {
+        memberRef.update({ voting: false });
+      }
+    });
+  }
+
+  // Toggle all members' voting status
+  toggleAllVoting = () => {
+    const { committee } = this.props;
+    const members = committee.members || {};
+    
+    // Only apply to members that are present
+    const presentMembers = Object.entries(members)
+      .filter(([_, member]) => member.present);
+    
+    // Determine the new value (toggle the current state)
+    const areAllVoting = presentMembers.length > 0 && 
+      presentMembers.every(([_, member]) => member.voting);
+    const newValue = !areAllVoting;
+    
+    // Update all present members
+    presentMembers.forEach(([id]) => {
+      const memberRef = firebase.database()
+        .ref(`committees/${this.props.match.params.committeeID}/members/${id}`);
+      
+      memberRef.update({ voting: newValue });
+    });
   }
 
   renderMemberItem = (id: MemberID, member: MemberData, fref: firebase.database.Reference) => {
+    // Create a custom checkbox handler for present that also updates voting if needed
+    const handlePresentChange = (event: React.FormEvent<HTMLInputElement>, data: CheckboxProps) => {
+      const newPresent = data.checked ?? false;
+      fref.update({ present: newPresent });
+      
+      // If present is being set to false, also set voting to false
+      if (!newPresent) {
+        fref.update({ voting: false });
+      }
+    };
+
+    // Create a custom checkbox handler for voting that only works when present is true
+    const handleVotingChange = (event: React.FormEvent<HTMLInputElement>, data: CheckboxProps) => {
+      if (member.present) {
+        fref.update({ voting: data.checked ?? false });
+      }
+    };
+
     return (
       <Table.Row key={id}>
         <Table.Cell>
@@ -102,19 +182,24 @@ export default class Admin extends React.Component<Props, State> {
             value={member.rank}
           />
         </Table.Cell>
-        <Table.Cell collapsing>
-          <Checkbox 
-            toggle 
-            checked={member.present} 
-            onChange={checkboxHandler<MemberData>(fref, 'present')} 
-          />
+        <Table.Cell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }}>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Checkbox 
+              toggle 
+              checked={member.present} 
+              onChange={handlePresentChange}
+            />
+          </div>
         </Table.Cell>
-        <Table.Cell collapsing>
-          <Checkbox 
-            toggle 
-            checked={member.voting} 
-            onChange={checkboxHandler<MemberData>(fref, 'voting')} 
-          />
+        <Table.Cell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }}>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Checkbox 
+              toggle 
+              checked={member.voting} 
+              onChange={handleVotingChange}
+              disabled={!member.present}
+            />
+          </div>
         </Table.Cell>
         <Table.Cell collapsing>
           <Button
@@ -146,7 +231,7 @@ export default class Admin extends React.Component<Props, State> {
       name: this.state.member.text,
       rank: this.state.rank,
       present: this.state.present,
-      voting: this.state.voting
+      voting: this.state.present && this.state.voting // Only set voting true if present is true
     };
 
     pushMember(committeeID, member);
@@ -162,11 +247,19 @@ export default class Admin extends React.Component<Props, State> {
   }
 
   setPresent = (event: React.FormEvent<HTMLInputElement>, data: CheckboxProps) => {
-    this.setState({ present: data.checked ?? false });
+    const present = data.checked ?? false;
+    this.setState({ 
+      present: present,
+      // If present is set to false, also set voting to false
+      voting: present ? this.state.voting : false
+    });
   }
 
   setVoting = (event: React.FormEvent<HTMLInputElement>, data: CheckboxProps) => {
-    this.setState({ voting: data.checked ?? false });
+    // Only allow setting voting if present is true
+    if (this.state.present) {
+      this.setState({ voting: data.checked ?? false });
+    }
   }
 
   setRank = (event: React.SyntheticEvent<HTMLElement>, data: DropdownProps) => {
@@ -229,21 +322,26 @@ export default class Admin extends React.Component<Props, State> {
             value={this.state.rank}
           />
         </Table.HeaderCell>
-        <Table.HeaderCell collapsing >
-          <Checkbox 
-            className="adder__checkbox--toggle-present"
-            toggle 
-            checked={newMemberPresent} 
-            onChange={setPresent} 
-          />
+        <Table.HeaderCell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }} >
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Checkbox 
+              className="adder__checkbox--toggle-present"
+              toggle 
+              checked={newMemberPresent} 
+              onChange={setPresent} 
+            />
+          </div>
         </Table.HeaderCell>
-        <Table.HeaderCell collapsing >
-          <Checkbox 
-            className="adder__checkbox--toggle-voting"
-            toggle 
-            checked={newMemberVoting} 
-            onChange={setVoting} 
-          />
+        <Table.HeaderCell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }} >
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <Checkbox 
+              className="adder__checkbox--toggle-voting"
+              toggle 
+              checked={newMemberVoting}
+              disabled={!newMemberPresent}
+              onChange={setVoting} 
+            />
+          </div>
         </Table.HeaderCell>
         <Table.HeaderCell>
           <Button
@@ -265,15 +363,50 @@ export default class Admin extends React.Component<Props, State> {
       this.renderMemberItem(id, members[id], props.fref.child('members').child(id))
     );
 
+    // Calculate if any member is not present or not voting
+    const areAllPresent = Object.values(members).length > 0 && 
+      Object.values(members).every(member => member.present);
+    
+    const presentMembers = Object.values(members).filter(member => member.present);
+    const areAllVoting = presentMembers.length > 0 && 
+      presentMembers.every(member => member.voting);
+
     return (
       <>
         <Table compact celled definition>
           <Table.Header>
             <Table.Row>
               <Table.HeaderCell />
-              <Table.HeaderCell>Rank</Table.HeaderCell>
-              <Table.HeaderCell>Present</Table.HeaderCell>
-              <Table.HeaderCell>Voting</Table.HeaderCell>
+              <Table.HeaderCell style={{ width: '30%', verticalAlign: 'middle' }}>Rank</Table.HeaderCell>
+              <Table.HeaderCell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '8px' }}>
+                  <span>Present</span>
+                  {memberItems.length > 0 && (
+                    <Checkbox 
+                      toggle 
+                      className="header-toggle" 
+                      checked={areAllPresent}
+                      onChange={this.toggleAllPresent}
+                      title={areAllPresent ? "Set all not present" : "Set all present"}
+                    />
+                  )}
+                </div>
+              </Table.HeaderCell>
+              <Table.HeaderCell style={{ width: '100px', textAlign: 'center', verticalAlign: 'middle' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexDirection: 'column', gap: '8px' }}>
+                  <span>Voting</span>
+                  {memberItems.length > 0 && (
+                    <Checkbox 
+                      toggle 
+                      className="header-toggle" 
+                      checked={areAllVoting}
+                      onChange={this.toggleAllVoting}
+                      disabled={!Object.values(members).some(member => member.present)}
+                      title={areAllVoting ? "Set all non-voting" : "Set all voting"}
+                    />
+                  )}
+                </div>
+              </Table.HeaderCell>
               <Table.HeaderCell />
             </Table.Row>
           </Table.Header>
@@ -306,23 +439,40 @@ export default class Admin extends React.Component<Props, State> {
 
   render() {
     const { committee, fref } = this.props;
+    const { showStats } = this.state;
 
     return (
       <Container style={{ padding: '1em 0em 1.5em' }}>
         <Helmet>
           <title>{`Setup - Muncoordinated`}</title>
         </Helmet>
-        <Grid columns="2" stackable>
+        
+        {/* Add toggle button at the top */}
+        <div style={{ marginBottom: '1em', textAlign: 'right' }}>
+          <Button 
+            toggle 
+            active={showStats} 
+            onClick={this.toggleStatsVisibility}
+          >
+            <Icon name="chart bar" />
+            {showStats ? 'Hide Stats' : 'Show Stats'}
+          </Button>
+        </div>
+        
+        <Grid columns={showStats ? "2" : "1"} stackable>
           <Grid.Row>
-            <Grid.Column width={9}>
+            <Grid.Column width={showStats ? 9 : 16}>
               <TemplateAdder committeeID={this.props.match.params.committeeID} />
               {this.renderCommitteeMembers({ data: committee, fref })}
             </Grid.Column>
-            <Grid.Column width={7}>
-              <CommitteeStatsTable verbose={true} data={committee} />
-            </Grid.Column>
+            
+            {showStats && (
+              <Grid.Column width={7}>
+                <CommitteeStatsTable verbose={true} data={committee} />
+              </Grid.Column>
+            )}
           </Grid.Row>
-        </Grid >
+        </Grid>
       </Container>
     );
   }
