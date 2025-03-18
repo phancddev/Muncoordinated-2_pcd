@@ -44,6 +44,9 @@ const RANK_OPTIONS = [
 ].map(makeDropdownOption);
 
 export default class Admin extends React.Component<Props, State> {
+  // Reference to the country search dropdown
+  private countrySearchRef = React.createRef<Dropdown>();
+
   constructor(props: Props) {
     super(props);
 
@@ -54,6 +57,36 @@ export default class Admin extends React.Component<Props, State> {
       voting: false,
       present: true
     };
+  }
+
+  componentDidMount() {
+    // Add event listener for keyboard shortcuts
+    document.addEventListener('keydown', this.handleKeyDown);
+  }
+
+  componentWillUnmount() {
+    // Remove event listener when component unmounts
+    document.removeEventListener('keydown', this.handleKeyDown);
+  }
+
+  // Handle keyboard shortcut
+  handleKeyDown = (event: KeyboardEvent) => {
+    // Check if Ctrl+H is pressed
+    if (event.ctrlKey && event.key === 'h') {
+      event.preventDefault(); // Prevent browser's default action
+      
+      // Focus on the country search dropdown
+      if (this.countrySearchRef.current) {
+        // Access the underlying DOM input element and focus on it
+        const dropdownElement = this.countrySearchRef.current as any;
+        const searchInput = dropdownElement.searchRef?.current?.inputRef?.current;
+        
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select(); // Optional: select any existing text
+        }
+      }
+    }
   }
 
   renderMemberItem = (id: MemberID, member: MemberData, fref: firebase.database.Reference) => {
@@ -174,6 +207,7 @@ export default class Admin extends React.Component<Props, State> {
       <Table.Row>
         <Table.HeaderCell>
           <Dropdown
+            ref={this.countrySearchRef}
             icon="search"
             className="adder__dropdown--select-member"
             placeholder="Select preset member"
