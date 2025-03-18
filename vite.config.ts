@@ -7,6 +7,12 @@ export default defineConfig({
   build: {
     outDir: 'build',
   },
+  server: {
+    host: '0.0.0.0', //host
+    port: 5173,      
+    open: false,
+    cors: true,
+  },
   test: {
     globals: true,
     environment: 'jsdom',
